@@ -47,6 +47,8 @@ struct SnifferPacket{
 static void showMetadata(SnifferPacket *snifferPacket) {
 
   unsigned int frameControl = ((unsigned int)snifferPacket->data[1] << 8) + snifferPacket->data[0];
+  char daddr[] = "00:00:00:00:00:00";
+  char saddr[] = "00:00:00:00:00:00";
 
   uint8_t version      = (frameControl & 0b0000000000000011) >> 0;
   uint8_t frameType    = (frameControl & 0b0000000000001100) >> 2;
@@ -54,25 +56,42 @@ static void showMetadata(SnifferPacket *snifferPacket) {
   uint8_t toDS         = (frameControl & 0b0000000100000000) >> 8;
   uint8_t fromDS       = (frameControl & 0b0000001000000000) >> 9;
 
+  Serial.print("Type:");
+  Serial.print(frameType, DEC);
+
+  if (frameType == TYPE_DATA) {
+    getMAC(daddr, snifferPacket->data, 4);
+    getMAC(saddr, snifferPacket->data, 10);
+  } else if (frameType == TYPE_MANAGEMENT) {
+    getMAC(daddr, snifferPacket->data, 4);
+    getMAC(saddr, snifferPacket->data, 10);
+  #if 0
   // Only look for probe request packets
   if (frameType != TYPE_MANAGEMENT ||
       frameSubType != SUBTYPE_PROBE_REQUEST)
         return;
+  #endif
+  } else {
+    return;
+  }
 
-  Serial.print("RSSI: ");
+  Serial.print(" RSSI: ");
   Serial.print(snifferPacket->rx_ctrl.rssi, DEC);
 
   Serial.print(" Ch: ");
   Serial.print(wifi_get_channel());
 
-  char addr[] = "00:00:00:00:00:00";
-  getMAC(addr, snifferPacket->data, 10);
-  Serial.print(" Peer MAC: ");
-  Serial.print(addr);
-
-  uint8_t SSID_length = snifferPacket->data[25];
-  Serial.print(" SSID: ");
-  printDataSpan(26, SSID_length, snifferPacket->data);
+  Serial.print(" DA: ");
+  Serial.print(daddr);
+  
+  Serial.print(" SA: ");
+  Serial.print(saddr);
+  
+  if ((frameType == TYPE_MANAGEMENT) && (frameSubType == SUBTYPE_PROBE_REQUEST)) {
+    uint8_t SSID_length = snifferPacket->data[25];
+    Serial.print(" SSID: ");
+    printDataSpan(26, SSID_length, snifferPacket->data);
+  }
 
   Serial.println();
 }
@@ -95,7 +114,7 @@ static void getMAC(char *addr, uint8_t* data, uint16_t offset) {
   sprintf(addr, "%02x:%02x:%02x:%02x:%02x:%02x", data[offset+0], data[offset+1], data[offset+2], data[offset+3], data[offset+4], data[offset+5]);
 }
 
-#define CHANNEL_HOP_INTERVAL_MS   1000
+#define CHANNEL_HOP_INTERVAL_MS   200
 static os_timer_t channelHop_timer;
 
 /**
@@ -108,6 +127,10 @@ void channelHop()
   if (new_channel > 14)
     new_channel = 1;
   wifi_set_channel(new_channel);
+
+  Serial.print("Hop: ");
+  Serial.print(new_channel);
+  Serial.println();
 }
 
 #define DISABLE 0
